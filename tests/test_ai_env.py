@@ -41,7 +41,7 @@ def test_resolve_vision_connection_prefers_vision_capable_provider() -> None:
     assert connection.provider == "gemini"
     assert connection.api_key == "sk-gemini"
     assert connection.base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
-    assert connection.model == "gemini-2.5-flash"
+    assert connection.model == "gemini-3.5-flash"
 
 
 def test_resolve_vision_connection_honors_explicit_values() -> None:

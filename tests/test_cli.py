@@ -104,7 +104,7 @@ def test_resolve_openai_compatible_config_uses_gemini_key() -> None:
     )
 
     assert provider == "openai"
-    assert model == "gemini-2.5-flash"
+    assert model == "gemini-3.5-flash"
     assert api_key == "sk-gemini"
     assert api_base == "https://generativelanguage.googleapis.com/v1beta/openai/"
 
@@ -214,7 +214,7 @@ def test_main_uses_detected_gemini_vision_connection(
     assert captured == {
         "api_key": "sk-gemini",
         "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.5-flash",
     }
 
 
