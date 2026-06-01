@@ -1,0 +1,233 @@
+# ss2json
+
+Capture a screen region or image file and extract structured JSON with a vision-capable AI model.
+
+`ss2json` is a macOS CLI for quick visual data extraction. Use it to turn screenshots of tables, forms, code snippets, dashboards, invoices, or other structured UI into JSON that can be piped into `jq`, saved to a file, or passed into another workflow.
+
+## Highlights
+
+- Interactive macOS region capture through `screencapture`.
+- Existing image analysis with `--file`.
+- Existing image analysis works cross-platform; only capture and clipboard modes require macOS.
+- Reads image bytes from stdin with `--file -`.
+- Clipboard image support with optional `pngpaste`.
+- Prompt presets for tables, code, forms, and general structured data.
+- Custom prompts for domain-specific extraction.
+- Writes JSON directly to files with `--output`.
+- Emits compact one-line JSON with `--compact`.
+- Explicit OpenAI, Anthropic, and OpenAI-compatible endpoint support.
+- PNG, JPEG, WebP, and GIF MIME detection for API payloads.
+- JSON-shaped error output for scripts and pipelines.
+
+## Requirements
+
+- macOS 12 or newer for interactive capture.
+- Python 3.10 or newer.
+- An API key for OpenAI, Anthropic, or an OpenAI-compatible vision endpoint.
+- Optional: `pngpaste` for reliable clipboard image support.
+
+```bash
+brew install pngpaste
+```
+
+## Installation
+
+```bash
+pipx install .
+```
+
+For local development:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+Set an API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Select a screen region and print JSON:
+
+```bash
+ss2json
+```
+
+Analyze an existing image:
+
+```bash
+ss2json --file ~/Desktop/dashboard.png
+```
+
+Analyze image bytes from stdin:
+
+```bash
+cat ~/Desktop/dashboard.png | ss2json --file -
+```
+
+Extract table-shaped data:
+
+```bash
+ss2json --mode table --file report.png
+```
+
+Use a custom extraction prompt:
+
+```bash
+ss2json --prompt "extract product names, prices, and ratings as an array"
+```
+
+Copy the JSON output to the clipboard:
+
+```bash
+ss2json --copy
+```
+
+Write output directly to a file:
+
+```bash
+ss2json --file receipt.jpg --output receipt.json
+```
+
+Print compact JSON for shell pipelines:
+
+```bash
+ss2json --file receipt.jpg --compact | jq .
+```
+
+## Modes
+
+| Mode | Intended output |
+| --- | --- |
+| `general` | A JSON representation of visible structured information. |
+| `table` | A JSON array of row objects. |
+| `code` | An array of code blocks with `language` and `code` keys. |
+| `form` | A JSON object mapping field labels to visible values. |
+
+Mode presets guide the model, but they do not guarantee perfect extraction. For high-value workflows, validate the output before using it downstream.
+
+## Provider Configuration
+
+OpenAI is used when `OPENAI_API_KEY` is set, when `--api-key` is passed, or when a custom OpenAI-compatible `--api-base` is provided:
+
+```bash
+ss2json --api-key "$OPENAI_API_KEY" --model gpt-4o
+```
+
+Anthropic is used when only `ANTHROPIC_API_KEY` is available:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+ss2json --model claude-sonnet-4-20250514
+```
+
+You can also choose a provider explicitly:
+
+```bash
+ss2json --provider anthropic --file receipt.jpg
+```
+
+OpenAI-compatible local or hosted endpoints are supported:
+
+```bash
+ss2json \
+  --api-base http://localhost:11434/v1 \
+  --api-key local-key \
+  --model llama3.2-vision
+```
+
+## CLI Reference
+
+```text
+usage: ss2json [-h] [--version] [--file PATH] [--prompt PROMPT]
+               [--mode {table,code,form,general}] [--copy] [--output OUTPUT]
+               [--compact] [--clipboard] [--api-key API_KEY]
+               [--provider {openai,anthropic}] [--api-base API_BASE]
+               [--model MODEL]
+
+options:
+  --file PATH, -f PATH       Analyze an existing image instead of capturing one.
+                             Use "-" for stdin.
+  --prompt TEXT, -p TEXT     Custom extraction instruction.
+  --mode MODE, -m MODE       Output hint: table, code, form, or general.
+  --copy, -c                 Copy JSON output to the macOS clipboard.
+  --output PATH, -o PATH     Write JSON output to a file instead of stdout.
+  --compact                  Emit compact one-line JSON.
+  --clipboard, -C            Read an image from the clipboard.
+  --api-key KEY, -k KEY      API key override.
+  --provider PROVIDER        Provider override: openai or anthropic.
+  --api-base URL             OpenAI-compatible API base URL.
+  --model NAME               Vision model override.
+  --version                  Print the installed version.
+```
+
+## Output
+
+Successful extraction prints JSON to stdout:
+
+```json
+[
+  {
+    "Product": "Widget A",
+    "Price": "$19.99",
+    "Stock": 42
+  }
+]
+```
+
+Errors also print JSON, which keeps shell pipelines predictable:
+
+```json
+{
+  "error": "File not found: missing.png"
+}
+```
+
+## Examples
+
+Extract a visible pricing table and inspect product names:
+
+```bash
+ss2json --mode table | jq '.[].Product'
+```
+
+Extract visible code blocks:
+
+```bash
+ss2json --mode code --file screenshot.png
+```
+
+Extract chart values with a custom schema:
+
+```bash
+ss2json \
+  --file chart.png \
+  --prompt "Extract the chart as {labels: string[], values: number[]}"
+```
+
+## Limitations
+
+- Interactive capture and clipboard mode are macOS-only. Existing image files can be analyzed on any supported Python platform.
+- AI extraction can be wrong, incomplete, or overconfident. Validate important results.
+- Screenshots containing private data are sent to the configured model provider.
+- Clipboard mode is most reliable with `pngpaste` installed.
+- Large or dense screenshots may require a stronger model or a more specific prompt.
+
+## Development
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest
+ruff check .
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
