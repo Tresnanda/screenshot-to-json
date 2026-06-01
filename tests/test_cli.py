@@ -94,6 +94,21 @@ def test_resolve_api_key_uses_explicit_provider_environment() -> None:
     )
 
 
+def test_resolve_openai_compatible_config_uses_gemini_key() -> None:
+    provider, model, api_key, api_base = cli._resolve_openai_compatible_config(
+        provider_arg=None,
+        api_key_arg=None,
+        model_arg=None,
+        api_base_arg="https://api.openai.com/v1",
+        env={"GEMINI_API_KEY": "sk-gemini"},
+    )
+
+    assert provider == "openai"
+    assert model == "gemini-2.5-flash"
+    assert api_key == "sk-gemini"
+    assert api_base == "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+
 def test_detect_mime_type_uses_image_suffixes() -> None:
     assert cli._detect_mime_type("screenshot.png") == "image/png"
     assert cli._detect_mime_type("photo.jpg") == "image/jpeg"
@@ -174,6 +189,33 @@ def test_main_accepts_mode_subcommand_and_out_alias(
     assert capsys.readouterr().out == ""
     assert json.loads(output.read_text(encoding="utf-8")) == [{"row": 1}]
     assert "tabular data" in captured["system_prompt"]
+
+
+def test_main_uses_detected_gemini_vision_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    image = tmp_path / "capture.png"
+    image.write_bytes(b"image-bytes")
+    captured: dict[str, str] = {}
+
+    def fake_call_vision_api(**kwargs):
+        captured["api_key"] = kwargs["api_key"]
+        captured["api_base"] = kwargs["api_base"]
+        captured["model"] = kwargs["model"]
+        return {"ok": True}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-gemini")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "_call_vision_api", fake_call_vision_api)
+
+    cli.main([str(image), "--compact"])
+
+    assert captured == {
+        "api_key": "sk-gemini",
+        "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "model": "gemini-2.5-flash",
+    }
 
 
 def test_main_compact_outputs_single_line_json(

@@ -32,6 +32,28 @@ brew install pngpaste
 
 ## Installation
 
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tresnanda/screenshot-to-json/main/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Tresnanda/screenshot-to-json/main/install.ps1 | iex
+```
+
+For unattended installs, pass `--yes`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tresnanda/screenshot-to-json/main/install.sh | bash -s -- --yes
+```
+
+The installer uses `pipx`, checks capture/clipboard tools where relevant, detects common AI API keys and local AI CLIs, skips Claude/Anthropic detection, then offers to launch `ss2json wizard`.
+
+Manual install:
+
 ```bash
 pipx install .
 ```
@@ -131,6 +153,8 @@ OpenAI is used when `OPENAI_API_KEY` is set, when `--api-key` is passed, or when
 ```bash
 ss2json --api-key "$OPENAI_API_KEY" --model gpt-4o
 ```
+
+`ss2json` can also auto-detect vision-capable OpenAI-compatible keys such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `OPENROUTER_API_KEY`. Text-only providers such as Groq, Mistral, Together, Perplexity, and xAI may be reported by the installer but are not chosen automatically for screenshots unless you pass a compatible vision model and endpoint.
 
 Anthropic is used when only `ANTHROPIC_API_KEY` is available:
 

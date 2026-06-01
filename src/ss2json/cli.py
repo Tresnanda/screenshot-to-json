@@ -37,6 +37,7 @@ from rich.prompt import Confirm, Prompt
 from rich.status import Status
 
 from ss2json import __version__
+from ss2json.ai_env import detect_ai_environment, resolve_vision_connection
 
 # ---------------------------------------------------------------------------
 # Console helpers
@@ -255,6 +256,33 @@ def _resolve_api_key(
     return env.get("OPENAI_API_KEY")
 
 
+def _resolve_openai_compatible_config(
+    provider_arg: str | None,
+    api_key_arg: str | None,
+    model_arg: str | None,
+    api_base_arg: str,
+    env: Mapping[str, str],
+) -> tuple[str, str, str | None, str]:
+    """Resolve provider, model, key, and base URL for the current run."""
+    provider, model = _resolve_provider_and_model(
+        provider_arg=provider_arg,
+        api_key_arg=api_key_arg,
+        model_arg=model_arg,
+        env=env,
+        api_base=api_base_arg,
+    )
+    if provider == "anthropic":
+        return provider, model, _resolve_api_key(api_key_arg, provider, env), api_base_arg
+
+    connection = resolve_vision_connection(
+        api_key_arg=api_key_arg,
+        api_base_arg=api_base_arg,
+        model_arg=model_arg,
+        env=env,
+    )
+    return "openai", connection.model, connection.api_key, connection.base_url
+
+
 def _detect_mime_type(path: str | Path) -> str:
     """Return a supported image MIME type for API payloads."""
     guessed, _ = mimetypes.guess_type(str(path))
@@ -452,6 +480,7 @@ def _format_command(args: list[str]) -> str:
 
 def run_wizard() -> None:
     """Interactive command builder for ss2json."""
+    ai_report = detect_ai_environment(os.environ)
     provider, model = _resolve_provider_and_model(
         provider_arg=None,
         api_key_arg=None,
@@ -481,6 +510,8 @@ def run_wizard() -> None:
     if output:
         answers["output"] = output
     answers["copy"] = Confirm.ask("Copy JSON to clipboard", default=False)
+    if ai_report["cli_harnesses"]:
+        print("Detected AI CLIs: " + ", ".join(ai_report["cli_harnesses"]))
 
     args = build_wizard_args(answers)
     print(f"\nGenerated command:\n  {_format_command(args)}\n")
@@ -661,15 +692,14 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
         sys.exit(1)
 
-    # ---- Determine provider, model, and API key ----
-    provider, model_name = _resolve_provider_and_model(
+    # ---- Determine provider, model, API key, and API base ----
+    provider, model_name, api_key, api_base = _resolve_openai_compatible_config(
         provider_arg=args.provider,
         api_key_arg=args.api_key,
         model_arg=args.model,
         env=os.environ,
-        api_base=args.api_base,
+        api_base_arg=args.api_base,
     )
-    api_key = _resolve_api_key(args.api_key, provider, os.environ)
     if not api_key:
         result = {
             "error": (
@@ -730,7 +760,7 @@ def main(argv: list[str] | None = None) -> None:
                     image_b64=image_b64,
                     mime_type=mime_type,
                     api_key=api_key,
-                    api_base=args.api_base,
+                    api_base=api_base,
                     model=model_name,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
