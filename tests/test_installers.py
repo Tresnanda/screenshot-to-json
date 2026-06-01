@@ -20,6 +20,10 @@ def test_unix_installer_uses_numbered_vision_ai_setup_and_key_entry() -> None:
     assert 'provider = "%s"' in text
     assert "Run $APP_NAME wizard now?" not in text
     assert '"$APP_NAME" wizard' not in text
+    assert "If $APP_NAME helps you, star the GitHub repo now?" in text
+    assert "gh repo star \"$REPO_SLUG\"" in text
+    assert "api.github.com/user/starred/$REPO_SLUG" in text
+    assert "Star it here: $REPO_URL" in text
     assert "Run ss2json in your terminal to start the guided extraction flow." in text
 
 
@@ -36,4 +40,8 @@ def test_windows_installer_uses_numbered_vision_ai_setup_and_key_entry() -> None
     assert "provider = `\"$Provider`\"" in text
     assert "Run $AppName wizard now?" not in text
     assert "& $AppName wizard" not in text
+    assert "If $AppName helps you, star the GitHub repo now?" in text
+    assert "gh repo star $RepoSlug" in text
+    assert "api.github.com/user/starred/$RepoSlug" in text
+    assert "Star it here: $RepoUrl" in text
     assert "Run ss2json in your terminal to start the guided extraction flow." in text
