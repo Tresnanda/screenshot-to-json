@@ -214,6 +214,4 @@ else
   log "Run: python -m pipx ensurepath"
 fi
 
-if has_tty && ask_yes_no "Run $APP_NAME wizard now?" "y"; then
-  "$APP_NAME" wizard
-fi
+log "Run ss2json in your terminal to start the guided extraction flow."

@@ -183,6 +183,4 @@ if (Get-Command $AppName -ErrorAction SilentlyContinue) {
     Write-Host "Run: python -m pipx ensurepath"
 }
 
-if (-not $Yes -and (Confirm-Step "Run $AppName wizard now?" $true)) {
-    & $AppName wizard
-}
+Write-Host "Run ss2json in your terminal to start the guided extraction flow."
