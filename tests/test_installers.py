@@ -54,3 +54,10 @@ def test_windows_installer_uses_numbered_vision_ai_setup_and_key_entry() -> None
     assert "api.github.com/user/starred/$RepoSlug" in text
     assert "Star it here: $RepoUrl" in text
     assert "Run ss2json in your terminal to start the guided extraction flow." in text
+
+
+def test_ci_checks_installer_script_syntax() -> None:
+    text = _read(".github/workflows/ci.yml")
+
+    assert "bash -n install.sh" in text
+    assert 'ParseFile("install.ps1"' in text
