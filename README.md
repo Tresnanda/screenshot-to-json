@@ -61,19 +61,19 @@ ss2json
 Analyze an existing image:
 
 ```bash
-ss2json --file ~/Desktop/dashboard.png
+ss2json ~/Desktop/dashboard.png
 ```
 
 Analyze image bytes from stdin:
 
 ```bash
-cat ~/Desktop/dashboard.png | ss2json --file -
+cat ~/Desktop/dashboard.png | ss2json -
 ```
 
 Extract table-shaped data:
 
 ```bash
-ss2json --mode table --file report.png
+ss2json table report.png
 ```
 
 Use a custom extraction prompt:
@@ -91,13 +91,13 @@ ss2json --copy
 Write output directly to a file:
 
 ```bash
-ss2json --file receipt.jpg --output receipt.json
+ss2json receipt.jpg --out receipt.json
 ```
 
 Print compact JSON for shell pipelines:
 
 ```bash
-ss2json --file receipt.jpg --compact | jq .
+ss2json receipt.jpg --compact | jq .
 ```
 
 ## Modes
@@ -149,14 +149,18 @@ usage: ss2json [-h] [--version] [--file PATH] [--prompt PROMPT]
                [--compact] [--clipboard] [--api-key API_KEY]
                [--provider {openai,anthropic}] [--api-base API_BASE]
                [--model MODEL]
+               [mode] [image]
 
 options:
+  mode                       Optional shortcut: table, code, form, or general.
+  image                      Optional image path. Use "-" for stdin.
   --file PATH, -f PATH       Analyze an existing image instead of capturing one.
                              Use "-" for stdin.
   --prompt TEXT, -p TEXT     Custom extraction instruction.
   --mode MODE, -m MODE       Output hint: table, code, form, or general.
   --copy, -c                 Copy JSON output to the macOS clipboard.
-  --output PATH, -o PATH     Write JSON output to a file instead of stdout.
+  --output PATH, --out PATH, -o PATH
+                             Write JSON output to a file instead of stdout.
   --compact                  Emit compact one-line JSON.
   --clipboard, -C            Read an image from the clipboard.
   --api-key KEY, -k KEY      API key override.
@@ -199,7 +203,7 @@ ss2json --mode table | jq '.[].Product'
 Extract visible code blocks:
 
 ```bash
-ss2json --mode code --file screenshot.png
+ss2json code screenshot.png
 ```
 
 Extract chart values with a custom schema:

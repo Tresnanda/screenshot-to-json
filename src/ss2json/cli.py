@@ -423,6 +423,9 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent("""\
             Examples:
               ss2json                          # Interactive screenshot → JSON
+              ss2json report.png                # Analyze existing image
+              ss2json table report.png          # Extract table data as JSON array
+              ss2json -                         # Analyze image bytes from stdin
               ss2json --file report.png         # Analyze existing image
               cat report.png | ss2json --file -  # Analyze image bytes from stdin
               ss2json --mode table              # Extract table data as JSON array
@@ -474,7 +477,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Also copy the resulting JSON to the clipboard",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output", "--out", "-o",
         type=str,
         default=None,
         help="Write JSON output to a file instead of stdout",
@@ -518,12 +521,37 @@ def _build_parser() -> argparse.ArgumentParser:
             "claude-sonnet-4-20250514 for Anthropic."
         ),
     )
+    parser.add_argument(
+        "tokens",
+        nargs="*",
+        help="Optional mode and image path, e.g. 'table receipt.png' or '-'",
+    )
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments and friendly positional shortcuts."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+    tokens = list(args.tokens)
+    modes = {"table", "code", "form", "general"}
+
+    if tokens and tokens[0] in modes:
+        args.mode = tokens.pop(0)
+
+    if tokens:
+        if len(tokens) > 1:
+            parser.error("expected at most one image path")
+        if args.file:
+            parser.error("provide an image path either positionally or with --file, not both")
+        args.file = tokens[0]
+
+    del args.tokens
+    return args
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
 
     # ---- macOS guard ----
     if _requires_macos(args.file, args.clipboard) and platform.system() != "Darwin":

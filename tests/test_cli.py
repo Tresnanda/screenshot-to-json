@@ -137,6 +137,45 @@ def test_main_writes_json_to_output_file(
     assert json.loads(output.read_text(encoding="utf-8")) == {"ok": True}
 
 
+def test_main_accepts_positional_image_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys,
+) -> None:
+    image = tmp_path / "capture.png"
+    image.write_bytes(b"image-bytes")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(cli, "_call_vision_api", lambda **_: {"ok": True})
+
+    cli.main([str(image), "--compact"])
+
+    assert capsys.readouterr().out == '{"ok":true}\n'
+
+
+def test_main_accepts_mode_subcommand_and_out_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys,
+) -> None:
+    image = tmp_path / "capture.png"
+    image.write_bytes(b"image-bytes")
+    output = tmp_path / "result.json"
+    captured: dict[str, str] = {}
+
+    def fake_call_vision_api(**kwargs):
+        captured["system_prompt"] = kwargs["system_prompt"]
+        return [{"row": 1}]
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(cli, "_call_vision_api", fake_call_vision_api)
+
+    cli.main(["table", str(image), "--out", str(output)])
+
+    assert capsys.readouterr().out == ""
+    assert json.loads(output.read_text(encoding="utf-8")) == [{"row": 1}]
+    assert "tabular data" in captured["system_prompt"]
+
+
 def test_main_compact_outputs_single_line_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -149,6 +188,29 @@ def test_main_compact_outputs_single_line_json(
 
     cli.main(["--file", str(image), "--compact"])
 
+    assert capsys.readouterr().out == '{"ok":true}\n'
+
+
+def test_file_dash_can_be_used_without_file_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    class FakeStdin:
+        buffer = io.BytesIO(b"stdin-image-bytes")
+
+    captured: dict[str, str] = {}
+
+    def fake_call_vision_api(**kwargs):
+        captured["image_b64"] = kwargs["image_b64"]
+        return {"ok": True}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(cli.sys, "stdin", FakeStdin())
+    monkeypatch.setattr(cli, "_call_vision_api", fake_call_vision_api)
+
+    cli.main(["-", "--compact"])
+
+    assert captured["image_b64"] == "c3RkaW4taW1hZ2UtYnl0ZXM="
     assert capsys.readouterr().out == '{"ok":true}\n'
 
 
