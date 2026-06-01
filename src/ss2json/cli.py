@@ -53,6 +53,7 @@ APP_NAME = "ss2json"
 DIST_NAME = "ss2json"
 REPO_URL = "https://github.com/Tresnanda/screenshot-to-json.git"
 REPO_SPEC = f"git+{REPO_URL}"
+MIN_PYTHON = (3, 10)
 
 
 @dataclass
@@ -90,24 +91,41 @@ def _is_app_pipx_python(path: str) -> bool:
     return f"/pipx/venvs/{DIST_NAME}/" in normalized
 
 
+def _python_version_ok(path: str) -> bool:
+    code = (
+        "import sys; "
+        f"raise SystemExit(0 if sys.version_info >= {MIN_PYTHON!r} else 1)"
+    )
+    try:
+        completed = subprocess.run(
+            [path, "-c", code],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
 def _host_python() -> str | None:
-    for name in ("python3", "python"):
+    for name in ("python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"):
         candidate = shutil.which(name)
-        if candidate and not _is_app_pipx_python(candidate):
+        if candidate and not _is_app_pipx_python(candidate) and _python_version_ok(candidate):
             return candidate
-    if not _is_app_pipx_python(sys.executable):
+    if not _is_app_pipx_python(sys.executable) and _python_version_ok(sys.executable):
         return sys.executable
     return None
 
 
 def _pipx_update_command() -> list[str]:
+    python = _host_python()
+    if not python:
+        return []
     pipx = _pipx_binary()
     if pipx:
-        return [pipx, "install", "--force", REPO_SPEC]
-    python = _host_python()
-    if python:
-        return [python, "-m", "pipx", "install", "--force", REPO_SPEC]
-    return []
+        return [pipx, "install", "--python", python, "--force", REPO_SPEC]
+    return [python, "-m", "pipx", "install", "--python", python, "--force", REPO_SPEC]
 
 
 def _bootstrap_pipx(python: str) -> None:
