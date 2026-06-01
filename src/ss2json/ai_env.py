@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from shutil import which as default_which
 from typing import Callable, Mapping
 
+from ss2json.config import AIConfig
+
 
 @dataclass(frozen=True)
 class VisionProviderSpec:
@@ -92,6 +94,11 @@ LOCAL_ENDPOINTS = (
     "http://localhost:4000/v1",
 )
 
+_HARNESS_DEFAULTS = {
+    "ollama": ("http://localhost:11434/v1", "llama3.2-vision"),
+    "lms": ("http://localhost:1234/v1", "local-vision-model"),
+}
+
 
 def mask_secret(value: str) -> str:
     """Return a display-safe representation of a secret."""
@@ -147,9 +154,62 @@ def resolve_vision_connection(
     api_base_arg: str,
     model_arg: str | None,
     env: Mapping[str, str],
+    config: AIConfig | None = None,
+    provider_arg: str | None = None,
 ) -> VisionConnection:
     """Resolve an OpenAI-compatible connection that can handle images."""
     default_base = "https://api.openai.com/v1"
+    if provider_arg or (config and (config.provider or config.harness)):
+        provider = provider_arg or (config.provider if config and config.provider else "")
+        harness = config.harness if config else ""
+        explicit_base = api_base_arg.rstrip("/") != default_base
+        if harness and not provider:
+            base_url, default_model = _HARNESS_DEFAULTS.get(harness, (default_base, "gpt-4o"))
+            return VisionConnection(
+                provider=harness,
+                api_key=api_key_arg or env.get("OPENAI_API_KEY", "") or harness,
+                base_url=(
+                    api_base_arg
+                    if explicit_base
+                    else (config.base_url if config else "") or base_url
+                ),
+                model=model_arg or (config.model if config else "") or default_model,
+            )
+
+        for spec in PROVIDER_SPECS:
+            if spec.provider == provider:
+                api_key = api_key_arg
+                if not api_key:
+                    for key_name in spec.key_names:
+                        if env.get(key_name):
+                            api_key = env[key_name]
+                            break
+                base_url = spec.base_url
+                if provider == "openai":
+                    base_url = env.get("OPENAI_BASE_URL") or base_url
+                return VisionConnection(
+                    provider=provider,
+                    api_key=api_key or "",
+                    base_url=(
+                        api_base_arg
+                        if explicit_base
+                        else (config.base_url if config else "") or base_url
+                    ),
+                    model=model_arg
+                    or (config.model if config else "")
+                    or spec.vision_model
+                    or spec.text_model,
+                )
+
+        return VisionConnection(
+            provider=provider or "custom",
+            api_key=api_key_arg or env.get("OPENAI_API_KEY", ""),
+            base_url=api_base_arg
+            if explicit_base
+            else (config.base_url if config else "") or default_base,
+            model=model_arg or (config.model if config else "") or "gpt-4o",
+        )
+
     if api_key_arg:
         return VisionConnection(
             provider="custom" if api_base_arg.rstrip("/") != default_base else "openai",
@@ -175,11 +235,9 @@ def resolve_vision_connection(
                 return VisionConnection(
                     provider=spec.provider,
                     api_key=value,
-                    base_url=(
-                        env.get("OPENAI_BASE_URL")
-                        if spec.provider == "openai"
-                        else spec.base_url
-                    ),
+                    base_url=env.get("OPENAI_BASE_URL") or spec.base_url
+                    if spec.provider == "openai"
+                    else spec.base_url,
                     model=model_arg or spec.vision_model,
                 )
 

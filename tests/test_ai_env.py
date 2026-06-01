@@ -3,6 +3,7 @@ from ss2json.ai_env import (
     mask_secret,
     resolve_vision_connection,
 )
+from ss2json.config import AIConfig
 
 
 def test_mask_secret_keeps_values_private() -> None:
@@ -56,3 +57,37 @@ def test_resolve_vision_connection_honors_explicit_values() -> None:
     assert connection.api_key == "explicit-key"
     assert connection.base_url == "http://localhost:11434/v1"
     assert connection.model == "llama3.2-vision"
+
+
+def test_resolve_vision_connection_uses_config_before_detected_environment() -> None:
+    connection = resolve_vision_connection(
+        api_key_arg=None,
+        api_base_arg="https://api.openai.com/v1",
+        model_arg=None,
+        env={"OPENAI_API_KEY": "sk-openai", "GEMINI_API_KEY": "sk-gemini"},
+        config=AIConfig(
+            provider="gemini",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            model="gemini-3.5-flash",
+        ),
+    )
+
+    assert connection.provider == "gemini"
+    assert connection.api_key == "sk-gemini"
+    assert connection.model == "gemini-3.5-flash"
+
+
+def test_resolve_vision_connection_prefers_cli_model_over_config() -> None:
+    connection = resolve_vision_connection(
+        api_key_arg=None,
+        api_base_arg="https://api.openai.com/v1",
+        model_arg="manual-model",
+        env={"OPENROUTER_API_KEY": "sk-openrouter"},
+        config=AIConfig(
+            provider="openrouter",
+            base_url="https://openrouter.ai/api/v1",
+            model="saved-model",
+        ),
+    )
+
+    assert connection.model == "manual-model"

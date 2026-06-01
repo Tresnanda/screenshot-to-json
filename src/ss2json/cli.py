@@ -37,7 +37,8 @@ from rich.prompt import Confirm, Prompt
 from rich.status import Status
 
 from ss2json import __version__
-from ss2json.ai_env import detect_ai_environment, resolve_vision_connection
+from ss2json.ai_env import PROVIDER_SPECS, detect_ai_environment, resolve_vision_connection
+from ss2json.config import AIConfig, config_path, load_config, reset_config, save_config
 
 # ---------------------------------------------------------------------------
 # Console helpers
@@ -219,10 +220,15 @@ def _resolve_provider_and_model(
     model_arg: str | None,
     env: Mapping[str, str],
     api_base: str,
+    config: AIConfig | None = None,
 ) -> tuple[str, str]:
     """Return provider and model based on CLI args and available environment."""
     if provider_arg:
         provider = provider_arg
+    elif config and config.provider:
+        provider = config.provider
+    elif config and config.harness:
+        provider = config.harness
     else:
         has_openai_key = bool(env.get("OPENAI_API_KEY"))
         has_anthropic_key = bool(env.get("ANTHROPIC_API_KEY"))
@@ -237,6 +243,8 @@ def _resolve_provider_and_model(
 
     if model_arg:
         return provider, model_arg
+    if config and config.model:
+        return provider, config.model
 
     if provider == "anthropic":
         return provider, "claude-sonnet-4-20250514"
@@ -262,6 +270,7 @@ def _resolve_openai_compatible_config(
     model_arg: str | None,
     api_base_arg: str,
     env: Mapping[str, str],
+    config: AIConfig | None = None,
 ) -> tuple[str, str, str | None, str]:
     """Resolve provider, model, key, and base URL for the current run."""
     provider, model = _resolve_provider_and_model(
@@ -270,6 +279,7 @@ def _resolve_openai_compatible_config(
         model_arg=model_arg,
         env=env,
         api_base=api_base_arg,
+        config=config,
     )
     if provider == "anthropic":
         return provider, model, _resolve_api_key(api_key_arg, provider, env), api_base_arg
@@ -279,6 +289,8 @@ def _resolve_openai_compatible_config(
         api_base_arg=api_base_arg,
         model_arg=model_arg,
         env=env,
+        config=config,
+        provider_arg=provider_arg,
     )
     return "openai", connection.model, connection.api_key, connection.base_url
 
@@ -478,6 +490,96 @@ def _format_command(args: list[str]) -> str:
     return "ss2json " + " ".join(shlex.quote(item) for item in args)
 
 
+def _provider_defaults(provider: str) -> tuple[str, str]:
+    for spec in PROVIDER_SPECS:
+        if spec.provider == provider:
+            return spec.base_url, spec.vision_model or spec.text_model
+    if provider == "custom":
+        return "https://api.openai.com/v1", "gpt-4o"
+    if provider == "anthropic":
+        return "", "claude-sonnet-4-20250514"
+    raise ValueError(f"Unknown provider: {provider}")
+
+
+def _print_config(config: AIConfig, path: Path) -> None:
+    print(f"path: {path}")
+    for field in ("provider", "base_url", "model", "harness"):
+        value = getattr(config, field)
+        if value:
+            print(f"{field}: {value}")
+
+
+def run_config_command(args: argparse.Namespace) -> None:
+    """Show, reset, or update saved AI defaults."""
+    path = config_path()
+    action = args.config_action or "interactive"
+    if action == "show":
+        config = load_config(path)
+        if config is None:
+            print(f"No config found at {path}")
+        else:
+            _print_config(config, path)
+        return
+
+    if action == "reset":
+        if reset_config(path):
+            print(f"Removed config: {path}")
+        else:
+            print(f"No config found at {path}")
+        return
+
+    if action == "set-provider":
+        provider = args.provider
+        if not provider:
+            provider = _choice(
+                "Provider",
+                [spec.provider for spec in PROVIDER_SPECS if spec.vision]
+                + ["custom", "anthropic"],
+                "openai",
+            )
+        default_base_url, default_model = _provider_defaults(provider)
+        if provider == "custom" and not args.api_base:
+            default_base_url = Prompt.ask("OpenAI-compatible base URL", default=default_base_url)
+        config = AIConfig(
+            provider=provider,
+            base_url=(
+                args.api_base
+                if args.api_base != "https://api.openai.com/v1"
+                else default_base_url
+            ),
+            model=args.model or default_model,
+        )
+        written = save_config(path, config)
+        print(f"Saved AI defaults to {written}")
+        return
+
+    if action == "set-cli":
+        harness = args.harness or _choice("CLI harness", ["ollama", "lms"], "ollama")
+        default_model = "llama3.2-vision" if harness == "ollama" else "local-vision-model"
+        default_base_url = "http://localhost:11434/v1" if harness == "ollama" else "http://localhost:1234/v1"
+        config = AIConfig(
+            harness=harness,
+            base_url=(
+                args.api_base
+                if args.api_base != "https://api.openai.com/v1"
+                else default_base_url
+            ),
+            model=args.model or default_model,
+        )
+        written = save_config(path, config)
+        print(f"Saved AI defaults to {written}")
+        return
+
+    if action == "interactive":
+        mode = _choice("Default type", ["provider", "cli"], "provider")
+        args.config_action = "set-cli" if mode == "cli" else "set-provider"
+        run_config_command(args)
+        return
+
+    _err(f"Unknown config action: {action}")
+    sys.exit(2)
+
+
 def run_wizard() -> None:
     """Interactive command builder for ss2json."""
     ai_report = detect_ai_environment(os.environ)
@@ -487,6 +589,7 @@ def run_wizard() -> None:
         model_arg=None,
         env=os.environ,
         api_base="https://api.openai.com/v1",
+        config=load_config(),
     )
     acquisition = _choice(
         "Image source",
@@ -503,7 +606,11 @@ def run_wizard() -> None:
         answers["provider"] = provider
         answers["model"] = model
     else:
-        answers["provider"] = _choice("Provider", ["openai", "anthropic"], provider)
+        answers["provider"] = _choice(
+            "Provider",
+            [spec.provider for spec in PROVIDER_SPECS if spec.vision] + ["anthropic"],
+            provider,
+        )
         answers["model"] = Prompt.ask("Model", default=model)
 
     output = Prompt.ask("Output file (blank for stdout)", default="")
@@ -532,6 +639,8 @@ def _build_parser() -> argparse.ArgumentParser:
             Examples:
               ss2json                          # Guided command builder
               ss2json wizard                   # Build the right command interactively
+              ss2json config                   # Choose saved AI defaults
+              ss2json config show              # Show saved AI defaults
               ss2json --no-wizard              # Interactive screenshot → JSON
               ss2json report.png                # Analyze existing image
               ss2json table report.png          # Extract table data as JSON array
@@ -612,9 +721,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["openai", "anthropic"],
+        choices=[
+            "openai",
+            "anthropic",
+            "gemini",
+            "openrouter",
+            "groq",
+            "mistral",
+            "together",
+            "perplexity",
+            "xai",
+            "custom",
+        ],
         default=None,
         help="AI provider to use. Defaults from API key environment.",
+    )
+    parser.add_argument(
+        "--harness",
+        type=str,
+        default=None,
+        help="CLI harness name for config set-cli, such as ollama or lms",
     )
     parser.add_argument(
         "--api-base",
@@ -640,7 +766,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "tokens",
         nargs="*",
-        help="Optional command, mode, and image path, e.g. 'wizard', 'table receipt.png', or '-'",
+        help=(
+            "Optional command, mode, and image path, e.g. 'wizard', 'config show', "
+            "'table receipt.png', or '-'"
+        ),
     )
     return parser
 
@@ -658,6 +787,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         tokens.pop(0)
         if tokens:
             parser.error("wizard does not accept extra arguments")
+
+    if tokens and tokens[0] == "config":
+        args.command = "config"
+        tokens.pop(0)
+        args.config_action = tokens.pop(0) if tokens else "interactive"
+        if tokens:
+            parser.error("config accepts at most one action")
+    else:
+        args.config_action = None
 
     if tokens and tokens[0] in modes:
         args.mode = tokens.pop(0)
@@ -686,6 +824,10 @@ def main(argv: list[str] | None = None) -> None:
         run_wizard()
         return
 
+    if args.command == "config":
+        run_config_command(args)
+        return
+
     # ---- macOS guard ----
     if _requires_macos(args.file, args.clipboard) and platform.system() != "Darwin":
         result = {"error": "ss2json only runs on macOS (requires screencapture)."}
@@ -693,12 +835,19 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     # ---- Determine provider, model, API key, and API base ----
+    try:
+        user_config = load_config()
+    except ValueError as exc:
+        result = {"error": f"Invalid AI config: {exc}"}
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        sys.exit(1)
     provider, model_name, api_key, api_base = _resolve_openai_compatible_config(
         provider_arg=args.provider,
         api_key_arg=args.api_key,
         model_arg=args.model,
         env=os.environ,
         api_base_arg=args.api_base,
+        config=user_config,
     )
     if not api_key:
         result = {

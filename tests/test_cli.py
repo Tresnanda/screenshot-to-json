@@ -285,6 +285,55 @@ def test_parse_args_accepts_wizard_command() -> None:
     assert args.command == "wizard"
 
 
+def test_parse_args_accepts_config_subcommands() -> None:
+    show = cli._parse_args(["config", "show"])
+    assert show.command == "config"
+    assert show.config_action == "show"
+
+    set_provider = cli._parse_args(
+        [
+            "config",
+            "set-provider",
+            "--provider",
+            "openrouter",
+            "--model",
+            "openai/gpt-4o",
+        ]
+    )
+    assert set_provider.config_action == "set-provider"
+    assert set_provider.provider == "openrouter"
+
+
+def test_config_show_reads_saved_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys,
+) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('provider = "openrouter"\nmodel = "openai/gpt-4o"\n', encoding="utf-8")
+    monkeypatch.setattr(cli, "config_path", lambda: config_file)
+
+    cli.main(["config", "show"])
+
+    out = capsys.readouterr().out
+    assert "provider: openrouter" in out
+    assert "model: openai/gpt-4o" in out
+
+
+def test_config_set_provider_saves_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    config_file = tmp_path / "config.toml"
+    monkeypatch.setattr(cli, "config_path", lambda: config_file)
+
+    cli.main(["config", "set-provider", "--provider", "gemini"])
+
+    text = config_file.read_text(encoding="utf-8")
+    assert 'provider = "gemini"' in text
+    assert 'model = "gemini-3.5-flash"' in text
+
+
 def test_build_wizard_args_for_table_file_output() -> None:
     args = cli.build_wizard_args(
         {

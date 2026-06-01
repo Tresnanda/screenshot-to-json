@@ -50,6 +50,57 @@ function Check-AIEnvironment {
     }
 }
 
+function Get-DefaultProvider {
+    if ([Environment]::GetEnvironmentVariable("GEMINI_API_KEY") -or [Environment]::GetEnvironmentVariable("GOOGLE_API_KEY")) { return "gemini" }
+    if ([Environment]::GetEnvironmentVariable("OPENROUTER_API_KEY")) { return "openrouter" }
+    if ([Environment]::GetEnvironmentVariable("OPENAI_API_KEY")) { return "openai" }
+    return "openai"
+}
+
+function Get-ProviderBaseUrl($Provider) {
+    switch ($Provider) {
+        "gemini" { return "https://generativelanguage.googleapis.com/v1beta/openai/" }
+        "openrouter" { return "https://openrouter.ai/api/v1" }
+        default {
+            $base = [Environment]::GetEnvironmentVariable("OPENAI_BASE_URL")
+            if ($base) { return $base }
+            return "https://api.openai.com/v1"
+        }
+    }
+}
+
+function Get-ProviderModel($Provider) {
+    switch ($Provider) {
+        "gemini" { return "gemini-3.5-flash" }
+        "openrouter" { return "openai/gpt-4o" }
+        default { return "gpt-4o" }
+    }
+}
+
+function Read-Defaulted($Prompt, $Default) {
+    $answer = Read-Host "$Prompt [$Default]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
+    return $answer
+}
+
+function Save-AIDefaults {
+    if ($Yes) { return }
+    if (-not (Confirm-Step "Save default AI provider/model for $AppName?" $true)) { return }
+    $provider = Read-Defaulted "Provider (openai/gemini/openrouter)" (Get-DefaultProvider)
+    $baseUrl = Read-Defaulted "Base URL" (Get-ProviderBaseUrl $provider)
+    $model = Read-Defaulted "Vision model" (Get-ProviderModel $provider)
+    $configDir = Join-Path $env:APPDATA $AppName
+    New-Item -ItemType Directory -Force -Path $configDir *> $null
+    $configPath = Join-Path $configDir "config.toml"
+    @(
+        "# $AppName AI defaults. Store API keys in environment variables, not here.",
+        "provider = `"$provider`"",
+        "base_url = `"$baseUrl`"",
+        "model = `"$model`""
+    ) | Set-Content -Path $configPath -Encoding UTF8
+    Write-Host "[ok] Saved AI defaults to $configPath"
+}
+
 Write-Host "ss2json installer"
 $Python = Find-Python
 Write-Host "[ok] Python: $(& $Python --version 2>&1)"
@@ -77,6 +128,7 @@ try {
 }
 
 Check-AIEnvironment
+Save-AIDefaults
 
 Write-Host "Installing $AppName from GitHub..."
 & $Python -m pipx install --force $RepoSpec
@@ -88,6 +140,6 @@ if (Get-Command $AppName -ErrorAction SilentlyContinue) {
     Write-Host "Run: python -m pipx ensurepath"
 }
 
-if (Confirm-Step "Run $AppName wizard now?" $true) {
+if (-not $Yes -and (Confirm-Step "Run $AppName wizard now?" $true)) {
     & $AppName wizard
 }

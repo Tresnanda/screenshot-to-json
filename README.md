@@ -50,7 +50,7 @@ For unattended installs, pass `--yes`:
 curl -fsSL https://raw.githubusercontent.com/Tresnanda/screenshot-to-json/main/install.sh | bash -s -- --yes
 ```
 
-The installer uses `pipx`, checks capture/clipboard tools where relevant, detects common AI API keys and local AI CLIs, skips Claude/Anthropic detection, then offers to launch `ss2json wizard`.
+The installer uses `pipx`, checks capture/clipboard tools where relevant, detects common AI API keys and local AI CLIs, skips Claude/Anthropic detection, and can save your default provider/model before launching `ss2json wizard`. It never writes API keys to the config file.
 
 Manual install:
 
@@ -156,6 +156,29 @@ ss2json --api-key "$OPENAI_API_KEY" --model gpt-4o
 
 `ss2json` can also auto-detect vision-capable OpenAI-compatible keys such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `OPENROUTER_API_KEY`. Text-only providers such as Groq, Mistral, Together, Perplexity, and xAI may be reported by the installer but are not chosen automatically for screenshots unless you pass a compatible vision model and endpoint.
 
+Save a default provider and model:
+
+```bash
+ss2json config
+ss2json config set-provider --provider gemini --model gemini-3.5-flash
+ss2json config show
+```
+
+Defaults live at `$XDG_CONFIG_HOME/ss2json/config.toml` or `~/.config/ss2json/config.toml` on macOS/Linux, and `%APPDATA%\ss2json\config.toml` on Windows. The file stores only `provider`, `base_url`, `model`, and optional `harness`; API keys stay in environment variables or `--api-key`.
+
+Resolution priority is:
+
+1. CLI flags such as `--api-key`, `--provider`, `--api-base`, and `--model`.
+2. Saved defaults from `ss2json config`.
+3. Detected environment variables.
+4. Built-in OpenAI-compatible defaults.
+
+Reset saved defaults:
+
+```bash
+ss2json config reset
+```
+
 Anthropic is used when only `ANTHROPIC_API_KEY` is available:
 
 ```bash
@@ -184,12 +207,13 @@ ss2json \
 usage: ss2json [-h] [--version] [--file PATH] [--prompt PROMPT]
                [--mode {table,code,form,general}] [--copy] [--output OUTPUT]
                [--compact] [--clipboard] [--api-key API_KEY]
-               [--provider {openai,anthropic}] [--api-base API_BASE]
-               [--model MODEL] [--no-wizard]
-               [mode] [image]
+               [--provider PROVIDER] [--harness HARNESS]
+               [--api-base API_BASE] [--model MODEL] [--no-wizard]
+               [command|mode] [image]
 
 options:
-  mode                       Optional shortcut: wizard, table, code, form, or general.
+  command|mode               Optional command or shortcut: wizard, config,
+                             table, code, form, or general.
   image                      Optional image path. Use "-" for stdin.
   --file PATH, -f PATH       Analyze an existing image instead of capturing one.
                              Use "-" for stdin.
@@ -201,7 +225,10 @@ options:
   --compact                  Emit compact one-line JSON.
   --clipboard, -C            Read an image from the clipboard.
   --api-key KEY, -k KEY      API key override.
-  --provider PROVIDER        Provider override: openai or anthropic.
+  --provider PROVIDER        Provider override: openai, anthropic, gemini,
+                             openrouter, groq, mistral, together, perplexity,
+                             xai, or custom.
+  --harness NAME             CLI harness for config set-cli, such as ollama or lms.
   --api-base URL             OpenAI-compatible API base URL.
   --model NAME               Vision model override.
   --no-wizard                Capture immediately instead of opening the guide.

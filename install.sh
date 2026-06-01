@@ -54,6 +54,50 @@ check_endpoints() {
     if curl -fsS --max-time 1 "$url" >/dev/null 2>&1; then log "[ok] local endpoint: ${url%/models}"; fi
   done
 }
+default_provider() {
+  if [ -n "${GEMINI_API_KEY:-}" ] || [ -n "${GOOGLE_API_KEY:-}" ]; then echo "gemini"
+  elif [ -n "${OPENROUTER_API_KEY:-}" ]; then echo "openrouter"
+  elif [ -n "${OPENAI_API_KEY:-}" ]; then echo "openai"
+  else echo "openai"
+  fi
+}
+provider_base_url() {
+  case "$1" in
+    gemini) echo "https://generativelanguage.googleapis.com/v1beta/openai/" ;;
+    openrouter) echo "https://openrouter.ai/api/v1" ;;
+    *) echo "${OPENAI_BASE_URL:-https://api.openai.com/v1}" ;;
+  esac
+}
+provider_model() {
+  case "$1" in
+    gemini) echo "gemini-3.5-flash" ;;
+    openrouter) echo "openai/gpt-4o" ;;
+    *) echo "gpt-4o" ;;
+  esac
+}
+ask_text() {
+  prompt="$1"
+  default="$2"
+  printf '%s [%s] ' "$prompt" "$default" >/dev/tty
+  read -r answer </dev/tty || answer=""
+  if [ -n "$answer" ]; then echo "$answer"; else echo "$default"; fi
+}
+write_ai_defaults() {
+  has_tty || return
+  ask_yes_no "Save default AI provider/model for $APP_NAME?" "y" || return
+  provider="$(ask_text "Provider (openai/gemini/openrouter)" "$(default_provider)")"
+  base_url="$(ask_text "Base URL" "$(provider_base_url "$provider")")"
+  model="$(ask_text "Vision model" "$(provider_model "$provider")")"
+  config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$APP_NAME"
+  mkdir -p "$config_dir"
+  {
+    printf '# %s AI defaults. Store API keys in environment variables, not here.\n' "$APP_NAME"
+    printf 'provider = "%s"\n' "$provider"
+    printf 'base_url = "%s"\n' "$base_url"
+    printf 'model = "%s"\n' "$model"
+  } >"$config_dir/config.toml"
+  log "[ok] Saved AI defaults to $config_dir/config.toml"
+}
 
 log "ss2json installer"
 PYTHON="$(find_python)" || { log "Error: Python 3.10+ is required."; exit 1; }
@@ -77,6 +121,7 @@ log "AI environment checks (Claude/Anthropic intentionally skipped):"
 check_keys
 check_commands
 check_endpoints
+write_ai_defaults
 
 log "Installing $APP_NAME from GitHub..."
 "$PYTHON" -m pipx install --force "$REPO_SPEC"
@@ -88,6 +133,6 @@ else
   log "Run: python -m pipx ensurepath"
 fi
 
-if ask_yes_no "Run $APP_NAME wizard now?" "y"; then
+if has_tty && ask_yes_no "Run $APP_NAME wizard now?" "y"; then
   "$APP_NAME" wizard
 fi
