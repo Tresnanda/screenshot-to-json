@@ -17,6 +17,7 @@ done
 
 log() { printf '%s\n' "$*"; }
 has_tty() { [ "$YES" -eq 0 ] && [ -r /dev/tty ]; }
+
 ask_yes_no() {
   prompt="$1"
   default="${2:-y}"
@@ -31,36 +32,81 @@ ask_yes_no() {
   [ -z "$answer" ] && answer="$default"
   [ "$answer" = "y" ] || [ "$answer" = "yes" ]
 }
+
+ask_choice() {
+  prompt="$1"
+  default="$2"
+  if ! has_tty; then
+    echo "$default"
+    return
+  fi
+  printf '%s [%s]: ' "$prompt" "$default" >/dev/tty
+  read -r answer </dev/tty || answer=""
+  if [ -n "$answer" ]; then echo "$answer"; else echo "$default"; fi
+}
+
 find_python() {
   if command -v python3 >/dev/null 2>&1; then command -v python3
   elif command -v python >/dev/null 2>&1; then command -v python
   else return 1
   fi
 }
-check_keys() {
-  for key in OPENAI_API_KEY OPENAI_BASE_URL GEMINI_API_KEY GOOGLE_API_KEY GROQ_API_KEY MISTRAL_API_KEY OPENROUTER_API_KEY TOGETHER_API_KEY PERPLEXITY_API_KEY XAI_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT; do
-    eval "value=\${$key:-}"
-    if [ -n "$value" ]; then log "[ok] $key is set"; else log "[info] $key not set"; fi
-  done
+
+shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
-check_commands() {
-  for cmd in openai gemini ollama lms gh vercel aider opencode codex; do
-    if command -v "$cmd" >/dev/null 2>&1; then log "[ok] $cmd CLI found"; fi
-  done
-}
-check_endpoints() {
-  command -v curl >/dev/null 2>&1 || return
-  for url in http://localhost:11434/v1/models http://localhost:1234/v1/models http://localhost:4000/v1/models; do
-    if curl -fsS --max-time 1 "$url" >/dev/null 2>&1; then log "[ok] local endpoint: ${url%/models}"; fi
-  done
-}
-default_provider() {
-  if [ -n "${GEMINI_API_KEY:-}" ] || [ -n "${GOOGLE_API_KEY:-}" ]; then echo "gemini"
-  elif [ -n "${OPENROUTER_API_KEY:-}" ]; then echo "openrouter"
-  elif [ -n "${OPENAI_API_KEY:-}" ]; then echo "openai"
-  else echo "openai"
+
+shell_profile() {
+  if [ -n "${ZDOTDIR:-}" ] && [ -d "$ZDOTDIR" ]; then
+    echo "$ZDOTDIR/.zshrc"
+  elif [ -n "${SHELL:-}" ] && [ "${SHELL##*/}" = "bash" ]; then
+    echo "$HOME/.bashrc"
+  else
+    echo "$HOME/.zshrc"
   fi
 }
+
+save_secret_to_shell_profile() {
+  name="$1"
+  value="$2"
+  profile="$(shell_profile)"
+  mkdir -p "$(dirname "$profile")"
+  {
+    printf '\n# Added by %s installer\n' "$APP_NAME"
+    printf 'export %s=%s\n' "$name" "$(shell_quote "$value")"
+  } >>"$profile"
+  export "$name=$value"
+  log "[ok] Saved $name to $profile"
+  log "Open a new terminal or run: source $profile"
+}
+
+config_dir() {
+  echo "${XDG_CONFIG_HOME:-$HOME/.config}/$APP_NAME"
+}
+
+write_provider_config() {
+  provider="$1"
+  base_url="$2"
+  model="$3"
+  dir="$(config_dir)"
+  mkdir -p "$dir"
+  {
+    printf '# %s AI defaults. Store API keys in environment variables, not here.\n' "$APP_NAME"
+    printf 'provider = "%s"\n' "$provider"
+    printf 'base_url = "%s"\n' "$base_url"
+    printf 'model = "%s"\n' "$model"
+  } >"$dir/config.toml"
+  log "[ok] Saved vision AI default to $dir/config.toml"
+}
+
+provider_env_key() {
+  case "$1" in
+    openai) echo "OPENAI_API_KEY" ;;
+    gemini) echo "GEMINI_API_KEY" ;;
+    openrouter) echo "OPENROUTER_API_KEY" ;;
+  esac
+}
+
 provider_base_url() {
   case "$1" in
     gemini) echo "https://generativelanguage.googleapis.com/v1beta/openai/" ;;
@@ -68,6 +114,7 @@ provider_base_url() {
     *) echo "${OPENAI_BASE_URL:-https://api.openai.com/v1}" ;;
   esac
 }
+
 provider_model() {
   case "$1" in
     gemini) echo "gemini-3.5-flash" ;;
@@ -75,31 +122,69 @@ provider_model() {
     *) echo "gpt-4o" ;;
   esac
 }
-ask_text() {
-  prompt="$1"
-  default="$2"
-  printf '%s [%s] ' "$prompt" "$default" >/dev/tty
-  read -r answer </dev/tty || answer=""
-  if [ -n "$answer" ]; then echo "$answer"; else echo "$default"; fi
-}
-write_ai_defaults() {
+
+ensure_provider_key() {
+  provider="$1"
+  key_name="$(provider_env_key "$provider")"
+  eval "key_value=\${$key_name:-}"
+  [ -n "$key_value" ] && { log "[ok] $key_name already set"; return; }
   has_tty || return
-  ask_yes_no "Save default AI provider/model for $APP_NAME?" "y" || return
-  provider="$(ask_text "Provider (openai/gemini/openrouter)" "$(default_provider)")"
-  base_url="$(ask_text "Base URL" "$(provider_base_url "$provider")")"
-  model="$(ask_text "Vision model" "$(provider_model "$provider")")"
-  config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/$APP_NAME"
-  mkdir -p "$config_dir"
-  {
-    printf '# %s AI defaults. Store API keys in environment variables, not here.\n' "$APP_NAME"
-    printf 'provider = "%s"\n' "$provider"
-    printf 'base_url = "%s"\n' "$base_url"
-    printf 'model = "%s"\n' "$model"
-  } >"$config_dir/config.toml"
-  log "[ok] Saved AI defaults to $config_dir/config.toml"
+  log ""
+  log "$key_name was not found."
+  log "1) Paste API key now"
+  log "2) Show me the env var command"
+  log "3) Skip key setup"
+  choice="$(ask_choice "Choice" "1")"
+  case "$choice" in
+    1)
+      printf 'Enter %s: ' "$key_name" >/dev/tty
+      stty -echo </dev/tty 2>/dev/null || true
+      read -r api_key </dev/tty || api_key=""
+      stty echo </dev/tty 2>/dev/null || true
+      printf '\n' >/dev/tty
+      if [ -n "$api_key" ]; then
+        save_secret_to_shell_profile "$key_name" "$api_key"
+      else
+        log "[info] Empty key skipped"
+      fi
+      ;;
+    2)
+      log "Run this later:"
+      log "  export $key_name=\"your-api-key\""
+      ;;
+    *)
+      log "[info] Skipped API key setup"
+      ;;
+  esac
 }
 
-log "ss2json installer"
+default_ai_choice() {
+  if [ -n "${OPENAI_API_KEY:-}" ]; then echo "1"
+  elif [ -n "${GEMINI_API_KEY:-}" ] || [ -n "${GOOGLE_API_KEY:-}" ]; then echo "2"
+  elif [ -n "${OPENROUTER_API_KEY:-}" ]; then echo "3"
+  else echo "4"
+  fi
+}
+
+setup_ai_defaults() {
+  has_tty || return
+  log ""
+  log "Choose vision AI default:"
+  log "1) OpenAI API"
+  log "2) Gemini API"
+  log "3) OpenRouter API"
+  log "4) Skip AI setup"
+  choice="$(ask_choice "Choice" "$(default_ai_choice)")"
+  case "$choice" in
+    1) ensure_provider_key "openai"; write_provider_config "openai" "$(provider_base_url openai)" "$(provider_model openai)" ;;
+    2) ensure_provider_key "gemini"; write_provider_config "gemini" "$(provider_base_url gemini)" "$(provider_model gemini)" ;;
+    3) ensure_provider_key "openrouter"; write_provider_config "openrouter" "$(provider_base_url openrouter)" "$(provider_model openrouter)" ;;
+    *) log "[info] Skipped AI setup. You can run: $APP_NAME config" ;;
+  esac
+}
+
+log "Install ss2json"
+log "This checks Python, installs with pipx, and can set a vision AI default."
 PYTHON="$(find_python)" || { log "Error: Python 3.10+ is required."; exit 1; }
 log "[ok] Python: $("$PYTHON" --version 2>&1)"
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
@@ -117,11 +202,7 @@ else
   exit 1
 fi
 
-log "AI environment checks (Claude/Anthropic intentionally skipped):"
-check_keys
-check_commands
-check_endpoints
-write_ai_defaults
+setup_ai_defaults
 
 log "Installing $APP_NAME from GitHub..."
 "$PYTHON" -m pipx install --force "$REPO_SPEC"
