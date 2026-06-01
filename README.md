@@ -58,6 +58,19 @@ Select a screen region and print JSON:
 ss2json
 ```
 
+On an interactive terminal, the bare command opens a guided command builder for source selection, extraction mode, detected provider/model, and output destination. The guide shows the generated command before running it:
+
+```bash
+ss2json
+ss2json wizard
+```
+
+To skip the guide and immediately start region capture, use:
+
+```bash
+ss2json --no-wizard
+```
+
 Analyze an existing image:
 
 ```bash
@@ -148,11 +161,11 @@ usage: ss2json [-h] [--version] [--file PATH] [--prompt PROMPT]
                [--mode {table,code,form,general}] [--copy] [--output OUTPUT]
                [--compact] [--clipboard] [--api-key API_KEY]
                [--provider {openai,anthropic}] [--api-base API_BASE]
-               [--model MODEL]
+               [--model MODEL] [--no-wizard]
                [mode] [image]
 
 options:
-  mode                       Optional shortcut: table, code, form, or general.
+  mode                       Optional shortcut: wizard, table, code, form, or general.
   image                      Optional image path. Use "-" for stdin.
   --file PATH, -f PATH       Analyze an existing image instead of capturing one.
                              Use "-" for stdin.
@@ -167,6 +180,7 @@ options:
   --provider PROVIDER        Provider override: openai or anthropic.
   --api-base URL             OpenAI-compatible API base URL.
   --model NAME               Vision model override.
+  --no-wizard                Capture immediately instead of opening the guide.
   --version                  Print the installed version.
 ```
 

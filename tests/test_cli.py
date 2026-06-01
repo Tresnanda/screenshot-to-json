@@ -235,3 +235,56 @@ def test_file_dash_reads_image_bytes_from_stdin(
 
     assert captured["image_b64"] == "c3RkaW4taW1hZ2UtYnl0ZXM="
     assert capsys.readouterr().out == '{"ok":true}\n'
+
+
+def test_parse_args_accepts_wizard_command() -> None:
+    args = cli._parse_args(["wizard"])
+
+    assert args.command == "wizard"
+
+
+def test_build_wizard_args_for_table_file_output() -> None:
+    args = cli.build_wizard_args(
+        {
+            "acquisition": "file",
+            "file": "receipt.png",
+            "mode": "table",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-20250514",
+            "output": "result.json",
+            "copy": True,
+        }
+    )
+
+    assert args == [
+        "table",
+        "receipt.png",
+        "--provider",
+        "anthropic",
+        "--model",
+        "claude-sonnet-4-20250514",
+        "--output",
+        "result.json",
+        "--copy",
+    ]
+
+
+def test_main_opens_wizard_for_bare_interactive_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"wizard": False}
+
+    class Tty:
+        def isatty(self) -> bool:
+            return True
+
+    def fake_wizard() -> None:
+        called["wizard"] = True
+
+    monkeypatch.setattr(cli.sys, "stdin", Tty())
+    monkeypatch.setattr(cli.sys, "stdout", Tty())
+    monkeypatch.setattr(cli, "run_wizard", fake_wizard)
+
+    cli.main([])
+
+    assert called["wizard"] is True

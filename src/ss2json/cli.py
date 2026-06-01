@@ -24,6 +24,7 @@ import json
 import mimetypes
 import os
 import platform
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from rich.console import Console
+from rich.prompt import Confirm, Prompt
 from rich.status import Status
 
 from ss2json import __version__
@@ -411,6 +413,81 @@ def _format_json_output(result: dict[str, Any] | list[Any], compact: bool) -> st
     return json.dumps(result, indent=2, ensure_ascii=False) + "\n"
 
 
+def build_wizard_args(answers: Mapping[str, object]) -> list[str]:
+    """Build deterministic ss2json arguments from wizard answers."""
+    args: list[str] = []
+    mode = str(answers.get("mode") or "general")
+    if mode != "general":
+        args.append(mode)
+
+    acquisition = str(answers.get("acquisition") or "screenshot")
+    if acquisition == "file" and answers.get("file"):
+        args.append(str(answers["file"]))
+    elif acquisition == "clipboard":
+        args.append("--clipboard")
+    elif acquisition == "stdin":
+        args.append("-")
+
+    provider = answers.get("provider")
+    if provider:
+        args.extend(["--provider", str(provider)])
+    model = answers.get("model")
+    if model:
+        args.extend(["--model", str(model)])
+    output = answers.get("output")
+    if output:
+        args.extend(["--output", str(output)])
+    if answers.get("copy"):
+        args.append("--copy")
+    return args
+
+
+def _choice(message: str, choices: list[str], default: str) -> str:
+    return Prompt.ask(message, choices=choices, default=default)
+
+
+def _format_command(args: list[str]) -> str:
+    return "ss2json " + " ".join(shlex.quote(item) for item in args)
+
+
+def run_wizard() -> None:
+    """Interactive command builder for ss2json."""
+    provider, model = _resolve_provider_and_model(
+        provider_arg=None,
+        api_key_arg=None,
+        model_arg=None,
+        env=os.environ,
+        api_base="https://api.openai.com/v1",
+    )
+    acquisition = _choice(
+        "Image source",
+        ["screenshot", "file", "clipboard", "stdin"],
+        "screenshot",
+    )
+    answers: dict[str, object] = {
+        "acquisition": acquisition,
+        "mode": _choice("Extraction mode", ["general", "table", "code", "form"], "general"),
+    }
+    if acquisition == "file":
+        answers["file"] = Prompt.ask("Image file")
+    if Confirm.ask(f"Use detected provider '{provider}' with model '{model}'", default=True):
+        answers["provider"] = provider
+        answers["model"] = model
+    else:
+        answers["provider"] = _choice("Provider", ["openai", "anthropic"], provider)
+        answers["model"] = Prompt.ask("Model", default=model)
+
+    output = Prompt.ask("Output file (blank for stdout)", default="")
+    if output:
+        answers["output"] = output
+    answers["copy"] = Confirm.ask("Copy JSON to clipboard", default=False)
+
+    args = build_wizard_args(answers)
+    print(f"\nGenerated command:\n  {_format_command(args)}\n")
+    if Confirm.ask("Run it now", default=True):
+        main(args)
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -422,7 +499,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Capture a screen region and extract structured JSON via AI vision.",
         epilog=textwrap.dedent("""\
             Examples:
-              ss2json                          # Interactive screenshot → JSON
+              ss2json                          # Guided command builder
+              ss2json wizard                   # Build the right command interactively
+              ss2json --no-wizard              # Interactive screenshot → JSON
               ss2json report.png                # Analyze existing image
               ss2json table report.png          # Extract table data as JSON array
               ss2json -                         # Analyze image bytes from stdin
@@ -522,9 +601,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--no-wizard",
+        action="store_true",
+        default=False,
+        help="Capture immediately instead of opening the interactive guide",
+    )
+    parser.add_argument(
         "tokens",
         nargs="*",
-        help="Optional mode and image path, e.g. 'table receipt.png' or '-'",
+        help="Optional command, mode, and image path, e.g. 'wizard', 'table receipt.png', or '-'",
     )
     return parser
 
@@ -535,6 +620,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     tokens = list(args.tokens)
     modes = {"table", "code", "form", "general"}
+    args.command = None
+
+    if tokens and tokens[0] == "wizard":
+        args.command = "wizard"
+        tokens.pop(0)
+        if tokens:
+            parser.error("wizard does not accept extra arguments")
 
     if tokens and tokens[0] in modes:
         args.mode = tokens.pop(0)
@@ -551,7 +643,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parse_args(argv)
+
+    if args.command == "wizard" or (
+        not raw_argv
+        and not args.no_wizard
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    ):
+        run_wizard()
+        return
 
     # ---- macOS guard ----
     if _requires_macos(args.file, args.clipboard) and platform.system() != "Darwin":
