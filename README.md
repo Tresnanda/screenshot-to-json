@@ -50,7 +50,7 @@ For unattended installs, pass `--yes`:
 curl -fsSL https://raw.githubusercontent.com/Tresnanda/screenshot-to-json/main/install.sh | bash -s -- --yes
 ```
 
-The installer uses `pipx`, checks capture/clipboard tools where relevant, and offers a simple numbered vision AI setup. You can choose OpenAI, Gemini, OpenRouter, or skip AI setup. If you paste an API key during install, it is saved to your user shell environment; the app config stores only provider/model defaults. The installer then offers to launch `ss2json wizard`.
+The installer uses `pipx`, checks capture/clipboard tools where relevant, and offers a simple numbered vision AI setup. You can choose OpenAI, Gemini, OpenRouter, or skip AI setup. If you paste an API key during install, it is saved to your user shell environment; the app config stores only provider/model defaults. The installer then offers to launch `ss2json wizard`. The wizard checks for a newer GitHub version and asks before updating.
 
 Manual install:
 
@@ -85,6 +85,12 @@ On an interactive terminal, the bare command opens a guided command builder for 
 ```bash
 ss2json
 ss2json wizard
+```
+
+Update to the latest GitHub version at any time:
+
+```bash
+ss2json update
 ```
 
 To skip the guide and immediately start region capture, use:
@@ -213,7 +219,7 @@ usage: ss2json [-h] [--version] [--file PATH] [--prompt PROMPT]
 
 options:
   command|mode               Optional command or shortcut: wizard, config,
-                             table, code, form, or general.
+                             update, table, code, form, or general.
   image                      Optional image path. Use "-" for stdin.
   --file PATH, -f PATH       Analyze an existing image instead of capturing one.
                              Use "-" for stdin.

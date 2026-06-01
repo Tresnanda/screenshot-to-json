@@ -1,5 +1,6 @@
 import io
 import json
+import subprocess
 
 import pytest
 
@@ -283,6 +284,33 @@ def test_parse_args_accepts_wizard_command() -> None:
     args = cli._parse_args(["wizard"])
 
     assert args.command == "wizard"
+
+
+def test_parse_args_accepts_update_command() -> None:
+    args = cli._parse_args(["update"])
+
+    assert args.command == "update"
+
+
+def test_update_command_runs_pipx_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/local/bin/pipx")
+
+    def fake_run(cmd: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    cli.main(["update"])
+    assert calls == [
+        [
+            "/usr/local/bin/pipx",
+            "install",
+            "--force",
+            "git+https://github.com/Tresnanda/screenshot-to-json.git",
+        ]
+    ]
 
 
 def test_parse_args_accepts_config_subcommands() -> None:
